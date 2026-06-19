@@ -71,7 +71,6 @@ variable "recipe" {
     parent_image      = string
     version           = string
     name              = optional(string)
-    ami_tags          = optional(map(string), {})
     description       = optional(string)
     user_data_base64  = optional(string)
     working_directory = optional(string)
@@ -198,10 +197,6 @@ variable "pipeline" {
       image_tests_enabled = optional(bool, true)
       timeout_minutes     = optional(number, 720)
     }))
-    logging_configuration = optional(object({
-      image_log_group_name    = optional(string)
-      pipeline_log_group_name = optional(string)
-    }))
     schedule = optional(object({
       pipeline_execution_start_condition = optional(string, "EXPRESSION_MATCH_AND_DEPENDENCY_UPDATES_AVAILABLE")
       schedule_expression                = string
@@ -278,4 +273,3 @@ variable "lifecycle_policy" {
     error_message = "lifecycle_policy.filter.type must be AGE or COUNT."
   }
 }
-

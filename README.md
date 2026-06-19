@@ -136,6 +136,7 @@ distribution_configuration = {
 ## Notes
 
 - If `create_instance_profile` is `false`, set `instance_profile_name` to an existing profile.
+- AMI tags belong in `distribution_configuration.distributions[*].ami_distribution_configuration.ami_tags`.
 - Recipe versions must be bumped when component data, component URI, or recipe content changes in ways that require replacement.
 - The module uses `replace_triggered_by` on the pipeline for the image recipe, matching AWS provider guidance for provider versions 5.74.0 and newer.
 

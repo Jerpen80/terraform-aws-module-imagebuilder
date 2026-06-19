@@ -17,7 +17,11 @@ locals {
     for key, component in aws_imagebuilder_component.this : key => component.arn
   }
 
-  lifecycle_role_arn = var.create_lifecycle_role ? aws_iam_role.lifecycle[0].arn : try(var.lifecycle_policy.execution_role_arn, null)
+  lifecycle_role_arn = try(
+    aws_iam_role.lifecycle[0].arn,
+    var.lifecycle_policy.execution_role_arn,
+    null,
+  )
 }
 
 resource "aws_iam_role" "instance" {
@@ -77,7 +81,6 @@ resource "aws_imagebuilder_image_recipe" "this" {
   parent_image = var.recipe.parent_image
   version      = var.recipe.version
 
-  ami_tags          = merge(local.tags, var.recipe.ami_tags)
   description       = var.recipe.description
   tags              = local.tags
   user_data_base64  = var.recipe.user_data_base64
@@ -279,15 +282,6 @@ resource "aws_imagebuilder_image_pipeline" "this" {
     }
   }
 
-  dynamic "logging_configuration" {
-    for_each = var.pipeline.logging_configuration == null ? [] : [var.pipeline.logging_configuration]
-
-    content {
-      image_log_group_name    = logging_configuration.value.image_log_group_name
-      pipeline_log_group_name = logging_configuration.value.pipeline_log_group_name
-    }
-  }
-
   dynamic "schedule" {
     for_each = var.pipeline.schedule == null ? [] : [var.pipeline.schedule]
 
@@ -387,4 +381,3 @@ resource "aws_imagebuilder_lifecycle_policy" "this" {
 
   depends_on = [aws_iam_role_policy_attachment.lifecycle]
 }
-
