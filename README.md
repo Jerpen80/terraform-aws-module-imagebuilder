@@ -21,7 +21,7 @@ This module creates an AWS EC2 Image Builder AMI pipeline with:
 
 ```hcl
 module "image_builder" {
-  source = "./"
+  source = "git::https://github.com/Jerpen80/terraform-aws-module-imagebuilder"
 
   name = "al2023-golden"
 
@@ -73,7 +73,7 @@ module "image_builder" {
 
 ```hcl
 module "image_builder" {
-  source = "./"
+  source = "git::https://github.com/Jerpen80/terraform-aws-module-imagebuilder"
 
   name = "al2023-custom"
 
