@@ -133,6 +133,265 @@ distribution_configuration = {
 }
 ```
 
+## Complete Input Reference
+
+This example shows every top-level variable and the available nested options. Replace placeholder ARNs and resource IDs with values from your account.
+
+```hcl
+module "image_builder" {
+  source = "git::https://github.com/Jerpen80/terraform-aws-module-imagebuilder"
+
+  name = "al2023-golden"
+
+  create_instance_profile                 = true
+  instance_profile_name                   = "al2023-golden-imagebuilder"
+  instance_profile_role_name              = "al2023-golden-imagebuilder-instance"
+  instance_profile_permissions_boundary   = "arn:aws:iam::123456789012:policy/permissions-boundary"
+  instance_profile_policy_arns            = [
+    "arn:aws:iam::123456789012:policy/image-builder-s3-access",
+  ]
+
+  components = {
+    install_tools = {
+      name                  = "install-tools"
+      platform              = "Linux"
+      version               = "1.0.0"
+      description           = "Install required operating system tools"
+      change_description    = "Initial version"
+      supported_os_versions = ["Amazon Linux 2023"]
+      skip_destroy          = false
+      kms_key_id            = "arn:aws:kms:eu-west-1:123456789012:key/00000000-0000-0000-0000-000000000000"
+      tags                  = { Component = "install-tools" }
+
+      data = yamlencode({
+        schemaVersion = 1.0
+        parameters = [{
+          PackageName = {
+            type    = "string"
+            default = "jq"
+          }
+        }]
+        phases = [{
+          name = "build"
+          steps = [{
+            name   = "InstallPackage"
+            action = "ExecuteBash"
+            inputs = {
+              commands = ["dnf install -y {{ PackageName }}"]
+            }
+          }]
+        }]
+      })
+    }
+
+    s3_component = {
+      name     = "s3-component"
+      platform = "Linux"
+      version  = "1.0.0"
+      uri      = "s3://example-image-builder/components/component.yaml"
+    }
+  }
+
+  recipe = {
+    name              = "al2023-golden"
+    description       = "Amazon Linux 2023 golden image"
+    parent_image      = "arn:aws:imagebuilder:eu-west-1:aws:image/amazon-linux-2023-x86/x.x.x"
+    version           = "1.0.0"
+    working_directory = "/tmp"
+    user_data_base64  = base64encode("#!/bin/bash\necho image-builder")
+
+    components = [
+      {
+        component_key = "install_tools"
+        parameters = {
+          PackageName = "jq"
+        }
+      },
+      {
+        component_arn = "arn:aws:imagebuilder:eu-west-1:aws:component/update-linux/x.x.x"
+      }
+    ]
+
+    block_device_mappings = [
+      {
+        device_name = "/dev/xvda"
+        ebs = {
+          delete_on_termination = true
+          encrypted             = true
+          iops                  = 3000
+          kms_key_id            = "arn:aws:kms:eu-west-1:123456789012:key/00000000-0000-0000-0000-000000000000"
+          throughput            = 125
+          volume_size           = 30
+          volume_type           = "gp3"
+        }
+      }
+    ]
+
+    systems_manager_agent = {
+      uninstall_after_build = false
+    }
+  }
+
+  infrastructure = {
+    name                          = "al2023-golden-infrastructure"
+    description                   = "Build infrastructure for the AL2023 image"
+    instance_types                = ["t3.small", "t3.medium"]
+    key_pair                      = "image-builder-debug"
+    subnet_id                     = "subnet-0123456789abcdef0"
+    security_group_ids            = ["sg-0123456789abcdef0"]
+    sns_topic_arn                 = "arn:aws:sns:eu-west-1:123456789012:image-builder"
+    terminate_instance_on_failure = true
+
+    resource_tags = {
+      Purpose = "image-builder"
+    }
+
+    instance_metadata_options = {
+      http_put_response_hop_limit = 1
+      http_tokens                 = "required"
+    }
+
+    logging = {
+      s3_bucket_name = "example-image-builder-logs"
+      s3_key_prefix  = "al2023/"
+    }
+
+    placement = {
+      availability_zone = "eu-west-1a"
+      tenancy           = "default"
+    }
+  }
+
+  distribution_configuration = {
+    name        = "al2023-golden-distribution"
+    description = "Distribute the golden AMI"
+
+    distributions = [
+      {
+        region                     = "eu-west-1"
+        license_configuration_arns = []
+
+        ami_distribution_configuration = {
+          name               = "al2023-golden-{{ imagebuilder:buildDate }}"
+          description        = "AL2023 golden AMI"
+          kms_key_id         = "arn:aws:kms:eu-west-1:123456789012:key/00000000-0000-0000-0000-000000000000"
+          target_account_ids = ["123456789012"]
+          ami_tags            = { Image = "al2023-golden" }
+
+          launch_permission = {
+            organization_arns        = []
+            organizational_unit_arns = []
+            user_groups              = []
+            user_ids                 = ["123456789012"]
+          }
+        }
+
+        launch_template_configurations = [
+          {
+            account_id         = "123456789012"
+            default            = true
+            launch_template_id = "lt-0123456789abcdef0"
+          }
+        ]
+
+        s3_export_configuration = {
+          disk_image_format = "VMDK"
+          role_name         = "image-builder-vm-export"
+          s3_bucket         = "example-image-builder-export"
+          s3_prefix         = "al2023/"
+        }
+
+        ssm_parameter_configurations = [
+          {
+            ami_account_id = "123456789012"
+            data_type      = "aws:ec2:image"
+            parameter_name = "/images/al2023-golden/latest"
+          }
+        ]
+      }
+    ]
+  }
+
+  pipeline = {
+    name                            = "al2023-golden"
+    description                     = "Weekly AL2023 image build"
+    enhanced_image_metadata_enabled = true
+    execution_role                  = "arn:aws:iam::123456789012:role/image-builder-pipeline"
+    status                          = "ENABLED"
+
+    image_tests_configuration = {
+      image_tests_enabled = true
+      timeout_minutes     = 720
+    }
+
+    schedule = {
+      pipeline_execution_start_condition = "EXPRESSION_MATCH_AND_DEPENDENCY_UPDATES_AVAILABLE"
+      schedule_expression                = "cron(0 3 ? * SUN *)"
+      timezone                           = "Etc/UTC"
+    }
+  }
+
+  create_lifecycle_role               = true
+  lifecycle_role_name                 = "al2023-golden-imagebuilder-lifecycle"
+  lifecycle_role_permissions_boundary = "arn:aws:iam::123456789012:policy/permissions-boundary"
+
+  lifecycle_policy = {
+    name          = "al2023-golden-lifecycle"
+    description   = "Retain the five newest golden AMIs"
+    resource_type = "AMI_IMAGE"
+
+    action = {
+      type = "DELETE"
+      include_resources = {
+        amis      = true
+        snapshots = true
+      }
+    }
+
+    filter = {
+      type            = "COUNT"
+      value           = 5
+      retain_at_least = 2
+    }
+
+    resource_selection_tag_map = {
+      Image = "al2023-golden"
+    }
+  }
+
+  tags = {
+    Environment = "production"
+    Project     = "platform"
+  }
+}
+```
+
+To use existing IAM resources instead of creating them:
+
+```hcl
+create_instance_profile = false
+instance_profile_name   = "existing-image-builder-profile"
+
+create_lifecycle_role = false
+lifecycle_policy = {
+  execution_role_arn = "arn:aws:iam::123456789012:role/existing-image-builder-lifecycle"
+  action = {
+    type = "DELETE"
+    include_resources = {
+      amis      = true
+      snapshots = true
+    }
+  }
+  filter = {
+    type  = "COUNT"
+    value = 5
+  }
+  resource_selection_tag_map = {
+    Image = "al2023-golden"
+  }
+}
+```
+
 ## Notes
 
 - If `create_instance_profile` is `false`, set `instance_profile_name` to an existing profile.
